@@ -14,28 +14,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     welcome_text = """
-اهلابيك حبيبي في بوت احمد خان!🌟
+اهلابيك حبيبي في بوت تحميل الفيديوهات!🌟
 أرسل لي رابط الفيديو من أي منصة وأنا أحمله إلك!
 
-📌 للإستخدام:
-• أرسل الرابط مباشرة لتحميل أفضل جودة
-• أو استخدم /download <رابط> لاختيار الجودة
+📌 ملاحظة: بعض فيديوهات اليوتيوب قد لا تعمل بسبب القيود
     """
     await update.message.reply_text(welcome_text)
-
-async def download_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await is_subscribed(update, context):
-        await update.message.reply_text(
-            f"⚠️ حتى تقدر تستخدم البوت، اشترك أولًا بالقناة: {CHANNEL_USERNAME}"
-        )
-        return
-    
-    if not context.args:
-        await update.message.reply_text("📝 Usage: /download <URL>")
-        return
-    
-    url = context.args[0]
-    await handle_download(update, url, quality_choice=True)
 
 async def is_subscribed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -46,78 +30,33 @@ async def is_subscribed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"خطأ أثناء التحقق من الاشتراك: {e}")
         return False
 
-def get_video_formats(url):
-    """الحصول على قائمة التنسيقات المتاحة"""
+def download_video(url):
+    """دورة التحميل المعدلة لليوتيوب"""
     ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'simulate': True,
-        'listformats': True,
-    }
-    
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        return info
-
-def download_video(url, format_id=None):
-    ydl_opts = {
-        'format': format_id or 'best[height<=720]',  # أفضل جودة حتى 720p
+        'format': 'bestvideo[height<=480]+bestaudio/best[height<=480]',
         'outtmpl': 'downloads/%(title)s.%(ext)s',
-        'merge_output_format': 'mp4',  # دمج الصوت والفيديو بصيغة mp4
+        'merge_output_format': 'mp4',
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Accept-Encoding': 'gzip,deflate',
+            'Accept-Charset': 'ISO-8859-1,utf-8;q=0.7,*;q=0.7',
+            'Connection': 'keep-alive',
         },
+        'no_check_certificate': True,
+        'ignoreerrors': True,
+        'quiet': False,
         'verbose': True
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
-        return filename
-
-async def handle_download(update: Update, url: str, quality_choice: bool = False):
     try:
-        await update.message.reply_text("⏳ جاري التحضير، انتظر شوي...")
-        
-        # إذا كان من اليوتيوب ونريد اختيار الجودة
-        if "youtube.com" in url or "youtu.be" in url and quality_choice:
-            try:
-                formats = get_video_formats(url)
-                # هنا يمكن إضافة منطق لاختيار الجودة
-                # للتبسيط سنستخدم جودة متوسطة
-                format_id = 'best[height<=720]'
-            except:
-                format_id = 'best'
-        else:
-            format_id = 'best'
-        
-        await update.message.reply_text("⏳ جاري التحميل، انتظر شوي...")
-        
-        filename = download_video(url, format_id)
-        await update.message.reply_text("✅ تم التحميل! جاري الإرسال...")
-
-        # إرسال الفيديو
-        with open(filename, "rb") as video:
-            await update.message.reply_video(
-                video, 
-                caption="✅ تم التحميل بواسطة @BotDownloader"
-            )
-
-        # حذف الملف بعد الإرسال
-        os.remove(filename)
-
-    except yt_dlp.utils.DownloadError as e:
-        if "Private video" in str(e):
-            await update.message.reply_text("❌ الفيديو خاص ولا يمكن تحميله")
-        elif "Members only" in str(e):
-            await update.message.reply_text("❌ الفيديو للأعضاء فقط")
-        elif "Sign in" in str(e):
-            await update.message.reply_text("❌ الفيديو يتطلب تسجيل دخول")
-        else:
-            await update.message.reply_text(f"❌ خطأ في التحميل: {str(e)}")
-    
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+            return filename, None
     except Exception as e:
-        await update.message.reply_text(f"❌ صار خطأ غير متوقع: {str(e)}")
+        return None, str(e)
 
 async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_subscribed(update, context):
@@ -126,8 +65,47 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    url = update.message.text
-    await handle_download(update, url)
+    url = update.message.text.strip()
+    
+    # فحص إذا كان الرابط من اليوتيوب
+    if "youtube.com" in url or "youtu.be" in url:
+        await update.message.reply_text("🎬 جاري تحميل من اليوتيوب... (قد يأخذ وقت)")
+    else:
+        await update.message.reply_text("⏳ جاري التحميل...")
+
+    try:
+        filename, error = download_video(url)
+        
+        if error:
+            if "Private video" in error:
+                await update.message.reply_text("❌ الفيديو خاص ولا يمكن تحميله")
+            elif "Members only" in error:
+                await update.message.reply_text("❌ الفيديو للأعضاء فقط")
+            elif "Sign in" in error:
+                await update.message.reply_text("❌ الفيديو يتطلب تسجيل دخول")
+            elif "age restricted" in error.lower():
+                await update.message.reply_text("❌ الفيديو محظور بسبب العمر")
+            else:
+                await update.message.reply_text(f"❌ فشل التحميل: {error}")
+            return
+
+        if filename and os.path.exists(filename):
+            await update.message.reply_text("✅ تم التحميل! جاري الإرسال...")
+            
+            # إرسال الفيديو
+            with open(filename, "rb") as video:
+                await update.message.reply_video(
+                    video, 
+                    caption="📥 تم التحميل بنجاح"
+                )
+            
+            # حذف الملف بعد الإرسال
+            os.remove(filename)
+        else:
+            await update.message.reply_text("❌ لم يتم إنشاء الملف، حاول برابط آخر")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ خطأ غير متوقع: {str(e)}")
 
 if not os.path.exists("downloads"):
     os.makedirs("downloads")
@@ -135,7 +113,6 @@ if not os.path.exists("downloads"):
 app = Application.builder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("download", download_command))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
 
 print("🚀 البوت يشتغل...")
