@@ -3,7 +3,7 @@ name: Run Telegram Bot 24/7
 on:
   workflow_dispatch:
   schedule:
-    - cron: '*/30 * * * *'  # كل 30 دقيقة
+    - cron: '0 */6 * * *'
 
 jobs:
   run-bot:
@@ -21,27 +21,11 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install python-telegram-bot yt-dlp
-
-    - name: List files (for debugging)
-      run: |
-        ls -la  # هذا سيعرض جميع الملفات للتأكد من وجودها
-
-    - name: Create downloads directory
-      run: |
-        mkdir -p downloads
+        pip install -r requirements.txt
 
     - name: Run bot
       env:
         BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         CHANNEL_USERNAME: ${{ secrets.CHANNEL_USERNAME }}
       run: |
-        # التأكد من وجود الملف
-        if [ -f "bot_download.py" ]; then
-          echo "✅ Found bot_download.py, starting bot..."
-          python bot_download.py
-        else
-          echo "❌ ERROR: bot_download.py not found!"
-          ls -la  # عرض الملفات للتحقق
-          exit 1
-        fi
+        python bot_download.py
