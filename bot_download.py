@@ -2,31 +2,38 @@ import os
 import yt_dlp
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import re
+import logging
+
+# إعداد التسجيل
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 TOKEN = "8197996560:AAFshyi0AYVcVULxwAANzNBz9RM7-9Y9kHc"
+CHANNEL_USERNAME = "@p_y_hy"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎬 **أهلاً! أنا بوت احمد خان لتحميل الفيديوهات**\n\n"
-                                  "📥 **أرسل لي رابط فيديو من:**\n"
-                                  "• يوتيوب 📺\n"
-                                  "• إنستغرام 📸\n"
-                                  "• تيك توك 🎵\n" 
-                                  "• تويتر 🐦\n"
-                                  "• فيسبوك 👍\n\n"
-                                  "⚡ **وسأحمله لك فوراً!**")
+    """يرحب بالمستخدم"""
+    await update.message.reply_text(
+        "🎬 **أهلاً! أنا بوت احمد خان لتحميل الفيديوهات**\n\n"
+        "📥 **أرسل لي رابط فيديو من:**\n"
+        "• يوتيوب 📺\n• إنستغرام 📸\n• تيك توك 🎵\n"
+        "⚡ **وسأحمله لك فوراً!**"
+    )
 
-def is_youtube_url(url):
-    """يتحقق إذا كان الرابط من يوتيوب"""
-    youtube_patterns = [
-        r'(https?://)?(www\.)?(youtube|youtu)\.(com|be)',
-        r'youtube\.com/watch\?v=',
-        r'youtu\.be/'
-    ]
-    return any(re.search(pattern, url) for pattern in youtube_patterns)
+async def is_subscribed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يتحقق من اشتراك المستخدم في القناة"""
+    try:
+        user_id = update.effective_user.id
+        member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        logging.error(f"خطأ في التحقق من الاشتراك: {e}")
+        return False
 
 def download_video(url):
-    """دالة التحميل الذكية"""
+    """دالة التحميل المحسنة"""
     ydl_opts = {
         'format': 'best[filesize<50M]',
         'outtmpl': 'downloads/%(title)s.%(ext)s',
@@ -34,110 +41,113 @@ def download_video(url):
         'no_warnings': True,
         'socket_timeout': 30,
         'retries': 3,
+        'merge_output_format': 'mp4',
+        
+        # إعدادات خاصة للمنصات المختلفة
         'extractor_args': {
             'youtube': {
-                'skip': ['dash', 'hls', 'thumbnails'],
+                'skip': ['dash', 'hls'],
+                'format': 'best[height<=720]'
+            },
+            'instagram': {
+                'format': 'best'
+            },
+            'tiktok': {
+                'format': 'best'
             }
         },
-        'postprocessors': [{
-            'key': 'FFmpegVideoConvertor',
-            'preferedformat': 'mp4',
-        }],
     }
-    
-    # إذا كان رابط يوتيوب، أضف خيارات إضافية
-    if is_youtube_url(url):
-        ydl_opts.update({
-            'extract_flat': False,
-            'ignoreerrors': True,
-            'no_check_certificate': True,
-        })
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # تأكد أن الملف موجود
             if os.path.exists(filename):
                 return filename
             else:
                 raise Exception("الملف لم يتم إنشاؤه")
                 
         except Exception as e:
-            # المحاولة بطريقة بديلة لليوتيوب
-            if is_youtube_url(url):
-                try:
-                    ydl_opts_alt = {
-                        'format': 'best[height<=720]',
-                        'outtmpl': 'downloads/%(title)s.%(ext)s',
-                        'quiet': True,
-                    }
-                    with yt_dlp.YoutubeDL(ydl_opts_alt) as ydl_alt:
-                        info = ydl_alt.extract_info(url, download=True)
-                        return ydl_alt.prepare_filename(info)
-                except:
-                    raise Exception("فيديو اليوتيوب يحتاج تحقق. جرب فيديو آخر")
-            raise Exception(f"خطأ في التحميل: {str(e)}")
+            # المحاولة بطريقة أبسط
+            try:
+                simple_opts = {
+                    'format': 'best',
+                    'outtmpl': 'downloads/%(title)s.%(ext)s',
+                    'quiet': True,
+                }
+                with yt_dlp.YoutubeDL(simple_opts) as ydl_simple:
+                    info = ydl_simple.extract_info(url, download=True)
+                    return ydl_simple.prepare_filename(info)
+            except:
+                raise Exception(f"فشل التحميل: {str(e)}")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يتعامل مع طلبات التحميل"""
+    # التحقق من الاشتراك أولاً
+    if not await is_subscribed(update, context):
+        await update.message.reply_text(
+            f"⚠️ يرجى الاشتراك في القناة أولاً:\n{CHANNEL_USERNAME}\n\n"
+            "بعد الاشتراك، أرسل /start مرة أخرى"
+        )
+        return
+
+    url = update.message.text.strip()
+    
+    # التحقق من صحة الرابط
+    if not url.startswith(('http://', 'https://')):
+        await update.message.reply_text("❌ هذا ليس رابطاً صالحاً")
+        return
+
+    await update.message.reply_text("⏳ جاري التحميل، انتظر قليلاً...")
+
     try:
-        url = update.message.text.strip()
-        
-        if not url.startswith(('http://', 'https://')):
-            await update.message.reply_text("❌ **أرسل رابط صحيح يبدأ بـ http:// أو https://**")
-            return
-            
-        await update.message.reply_text("⏳ **جاري التحميل...**")
-        
         filename = download_video(url)
-        await update.message.reply_text("✅ **تم التحميل! جاري الإرسال...**")
+        await update.message.reply_text("✅ تم التحميل! جاري الإرسال...")
 
-        # أرسل الفيديو مع معالجة الأخطاء
-        try:
-            with open(filename, "rb") as video:
-                await update.message.reply_video(
-                    video, 
-                    caption="📥 تم التحميل بنجاح",
-                    supports_streaming=True,
-                    timeout=300
-                )
-        except Exception as send_error:
-            await update.message.reply_text("📨 **حجم الفيديو كبير جداً**\n\n"
-                                          "📋 **جرب:**\n"
-                                          "• فيديو أقصر\n"
-                                          "• رابط من إنستغرام/تيك توك\n"
-                                          f"❌ {str(send_error)}")
+        # إرسال الفيديو
+        with open(filename, "rb") as video:
+            await update.message.reply_video(
+                video,
+                caption="📥 تم التحميل بنجاح",
+                supports_streaming=True
+            )
 
         # تنظيف الملف
-        try:
-            if os.path.exists(filename):
-                os.remove(filename)
-        except:
-            pass
+        if os.path.exists(filename):
+            os.remove(filename)
             
-        await update.message.reply_text("🎉 **تم بنجاح! أرسل رابط آخر**")
+        await update.message.reply_text("🎉 تم الانتهاء! يمكنك إرسال رابط آخر")
         
     except Exception as e:
         error_msg = str(e)
-        
-        if "تحقق" in error_msg or "Sign in" in error_msg or "cookies" in error_msg:
-            await update.message.reply_text("⚠️ **لم أستطع تحميل فيديو اليوتيوب**\n\n"
-                                          "🎯 **الحلول:**\n"
-                                          "• جرب فيديو من إنستغرام أو تيك توك\n"
-                                          "• جرب فيديو يوتيوب مختلف\n"
-                                          "• بعض الفيديوهات تحتاج تحقق\n\n"
-                                          "📸 **إنستغرام وتيك توك يعملان دائماً!**")
+        if "Sign in" in error_msg or "cookies" in error_msg:
+            await update.message.reply_text(
+                "⚠️ لم أستطع تحميل هذا الفيديو\n\n"
+                "📌 جرب روابط من:\n• إنستغرام\n• تيك توك\n• تويتر\n\n"
+                "🎬 هذه المنصات تعمل بشكل أفضل!"
+            )
         else:
-            await update.message.reply_text(f"❌ **خطأ:** {error_msg}")
+            await update.message.reply_text(f"❌ حدث خطأ: {error_msg}")
 
-# الإعدادات
-if not os.path.exists("downloads"):
-    os.makedirs("downloads")
+def main():
+    """الدالة الرئيسية"""
+    # إنشاء مجلد التحميلات
+    if not os.path.exists("downloads"):
+        os.makedirs("downloads")
+    
+    # التحقق من التوكن
+    if not TOKEN or TOKEN == "ضع_توكن_بوتك_هنا":
+        logging.error("❌ لم تقم بوضع توكن البوت!")
+        return
 
-app = Application.builder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # إنشاء وتشغيل البوت
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
 
-print("🤖 البوت يعمل...")
-app.run_polling()
+    logging.info("🚀 بدأ تشغيل البوت...")
+    app.run_polling(drop_pending_updates=True)
+
+if __name__ == "__main__":
+    main()
