@@ -2,10 +2,18 @@ import os
 import yt_dlp
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import logging
+import asyncio
+
+# إعداد التسجيل
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 # ====== إعداد التوكن واسم القناة ======
-TOKEN="8197996560:AAFshyi0AYVcVULxwAANzNBz9RM7-9Y9kHc"
-CHANNEL_USERNAME = "@p_y_hy"
+TOKEN = os.environ.get("BOT_TOKEN", "8197996560:AAFshyi0AYVcVULxwAANzNBz9RM7-9Y9kHc")
+CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "@p_y_hy")
 
 # ====== دالة بدء التشغيل ======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -24,14 +32,14 @@ async def is_subscribed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
-        print(f"خطأ أثناء التحقق من الاشتراك: {e}")
+        logging.error(f"خطأ أثناء التحقق من الاشتراك: {e}")
         return False
 
 # ====== دالة تحميل الفيديو ======
 def download_video(url):
     ydl_opts = {
         'format': 'best',
-        'outtmpl': 'downloads/%(title)s.%(ext)s',
+        'outtmpl': '/tmp/%(title)s.%(ext)s',  # استخدام /tmp للملفات المؤقتة
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -60,4 +68,25 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         os.remove(filename)
 
     except Exception as e:
-        await update
+        await update.message.reply_text(f"❌ صار خطأ أثناء التحميل: {str(e)}")
+
+# ====== الإعدادات الرئيسية ======
+def main():
+    # لا داعي لإنشاء مجلد التحميلات لأننا نستخدم /tmp
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
+
+    logging.info("🚀 البوت يشتغل على GitHub Actions...")
+    
+    # تشغيل البوت مع إعادة التشغيل التلقائي عند الفشل
+    while True:
+        try:
+            app.run_polling()
+        except Exception as e:
+            logging.error(f"البوت توقف: {e}. إعادة التشغيل خلال 10 ثوان...")
+            asyncio.sleep(10)
+
+if __name__ == "__main__":
+    main()
