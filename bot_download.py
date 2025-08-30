@@ -2,26 +2,32 @@ import os
 import yt_dlp
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import time
-import logging
 
-# إعداد التسجيل
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# ====== إعداد التوكن واسم القناة ======
+TOKEN="8197996560:AAFshyi0AYVcVULxwAANzNBz9RM7-9Y9kHc"
+CHANNEL_USERNAME = "@p_y_hy"
 
-# الحصول على التوكن من متغيرات البيئة
-TOKEN = os.environ.get("BOT_TOKEN")
-CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME")
-
-if not TOKEN:
-    logging.error("❌ ERROR: BOT_TOKEN not found!")
-    exit(1)
-
+# ====== دالة بدء التشغيل ======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 أهلاً! حبيبي انا بوت احمد خان أرسل لي رابط فيديو وسأحمله لك!")
+    if not await is_subscribed(update, context):
+        await update.message.reply_text(
+            f"⚠️ حتى تقدر تستخدم البوت، اشترك أولًا بالقناة: {CHANNEL_USERNAME}"
+        )
+        return
 
+    await update.message.reply_text("اهلابيك حبيبي في بوت احمد خان!🌟\nأرسل لي رابط الفيديو من أي منصة وأنا أحمله إلك!")
+
+# ====== دالة التحقق من الاشتراك بالقناة ======
+async def is_subscribed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        print(f"خطأ أثناء التحقق من الاشتراك: {e}")
+        return False
+
+# ====== دالة تحميل الفيديو ======
 def download_video(url):
     ydl_opts = {
         'format': 'best',
@@ -30,13 +36,21 @@ def download_video(url):
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        return ydl.prepare_filename(info)
+        filename = ydl.prepare_filename(info)
+        return filename
 
+# ====== دالة معالجة التحميل ======
 async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await is_subscribed(update, context):
+        await update.message.reply_text(
+            f"⚠️ حتى تقدر تستخدم البوت، اشترك أولًا بالقناة: {CHANNEL_USERNAME}"
+        )
+        return
+
+    url = update.message.text
+    await update.message.reply_text("⏳ جاري التحميل، انتظر شوي...")
+
     try:
-        url = update.message.text
-        await update.message.reply_text("⏳ جاري التحميل...")
-        
         filename = download_video(url)
         await update.message.reply_text("✅ تم التحميل! جاري الإرسال...")
 
@@ -44,21 +58,6 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_video(video)
 
         os.remove(filename)
-        
+
     except Exception as e:
-        await update.message.reply_text(f"❌ خطأ: {str(e)}")
-
-def main():
-    # إنشاء مجلد التحميلات
-    if not os.path.exists("downloads"):
-        os.makedirs("downloads")
-    
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
-
-    logging.info("🚀 Starting bot...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+        await update
