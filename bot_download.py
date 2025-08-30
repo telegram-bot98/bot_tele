@@ -3,6 +3,7 @@ import yt_dlp
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import logging
+import tempfile
 import asyncio
 
 # إعداد التسجيل
@@ -37,15 +38,26 @@ async def is_subscribed(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ====== دالة تحميل الفيديو ======
 def download_video(url):
+    # إنشاء مجلد مؤقت داخل /tmp
+    temp_dir = tempfile.mkdtemp()
     ydl_opts = {
-        'format': 'best',
-        'outtmpl': '/tmp/%(title)s.%(ext)s',  # استخدام /tmp للملفات المؤقتة
+        'format': 'best[filesize<20M]',  # حجم أصغر ليتناسب مع GitHub
+        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
+        'quiet': True,
+        'no_warnings': True,
+        'socket_timeout': 30,
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
-        return filename
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+            return filename
+    except Exception as e:
+        # تنظيف المجلد المؤقت في حالة الخطأ
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise e
 
 # ====== دالة معالجة التحميل ======
 async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -65,14 +77,33 @@ async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(filename, "rb") as video:
             await update.message.reply_video(video)
 
-        os.remove(filename)
+        # تنظيف الملفات المؤقتة
+        try:
+            os.remove(filename)
+            temp_dir = os.path.dirname(filename)
+            if temp_dir.startswith('/tmp'):
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        except:
+            pass
 
     except Exception as e:
-        await update.message.reply_text(f"❌ صار خطأ أثناء التحميل: {str(e)}")
+        error_msg = str(e)
+        logging.error(f"خطأ في التحميل: {error_msg}")
+        
+        if "Sign in" in error_msg or "cookies" in error_msg:
+            await update.message.reply_text(
+                "❌ لم أستطع تحميل الفيديو. يبدو أن المنصة تطلب تحقق.\n\n"
+                "📥 جرب روابط من:\n"
+                "• تيك توك 🎵\n"
+                "• فيسبوك 👍\n"
+                "• تويتر 🐦\n"
+            )
+        else:
+            await update.message.reply_text(f"❌ صار خطأ أثناء التحميل: {error_msg}")
 
 # ====== الإعدادات الرئيسية ======
 def main():
-    # لا داعي لإنشاء مجلد التحميلات لأننا نستخدم /tmp
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -80,13 +111,13 @@ def main():
 
     logging.info("🚀 البوت يشتغل على GitHub Actions...")
     
-    # تشغيل البوت مع إعادة التشغيل التلقائي عند الفشل
+    # تشغيل البوت مع إعادة التشغيل التلقائي
     while True:
         try:
             app.run_polling()
         except Exception as e:
             logging.error(f"البوت توقف: {e}. إعادة التشغيل خلال 10 ثوان...")
-            asyncio.sleep(10)
+            time.sleep(10)
 
 if __name__ == "__main__":
     main()
