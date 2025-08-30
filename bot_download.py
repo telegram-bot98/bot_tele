@@ -80,7 +80,7 @@ async def handle_download(update: Update, url: str, quality_choice: bool = False
         await update.message.reply_text("⏳ جاري التحضير، انتظر شوي...")
         
         # إذا كان من اليوتيوب ونريد اختيار الجودة
-        if "youtube.com" in url or "youtu.be" in url" and quality_choice:
+        if "youtube.com" in url or "youtu.be" in url and quality_choice:
             try:
                 formats = get_video_formats(url)
                 # هنا يمكن إضافة منطق لاختيار الجودة
